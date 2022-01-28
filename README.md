@@ -1,5 +1,5 @@
 # discord-chat-bot
- Implementation of Chatterbot using Discord API.
+Implementation of [Chatterbot](https://github.com/gunthercox/ChatterBot) using Discord API. This project uses some functionality of Chatterbot, but is not endorsed by Chatterbot nor a distribution of the code.
 
 ## Usage
 Due to the necessity of storing files to train the AI, the bot is not hosted publicy. You must download this repository and run the `chat-bot.py` script using your own bot account.
