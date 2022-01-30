@@ -1,6 +1,8 @@
 # discord-chat-bot
 Implementation of [Chatterbot](https://github.com/gunthercox/ChatterBot) using Discord API. This project uses some functionality of Chatterbot, but is not endorsed by Chatterbot nor a distribution of the code.
 
+![demo usage](img/demo.png)
+
 ## Usage
 Due to the necessity of storing files to train the AI, the bot is not hosted publicly. You must download this repository and run the `chat-bot.py` script using your own bot account.
 
@@ -23,7 +25,7 @@ Takes any string of lowercase letters as input for the AI to respond to. Any bot
 Takes every message in a reply chain and caches it as a conversation. If cache is full, all conversations will be saved.
 * #### `$train args: 'basic', 'custom', 'clear'`
 Retrains AI. All the cache is saved before training. `basic` will train based on the default English corpus, `custom` will train based on saved conversations, and `clear` will reset the AI storage (not saved custom conversations) before retraining. `clear` is accessible only to administrators of the server. Note that while one parameter is required, more than one can be passed in at once.
-* #### `$cache_handle args: 'clear', 'write'`
-Modifies cache. `clear` will reset the cache and delete recently taught conversations. `write` will save all conversations in the cache. Accessible only to administrators of the server.
+* #### `edit args: 'clear', 'write', 'delete i'`
+Modifies cache. `clear` will reset the cache and delete recently taught conversations. `write` will save all conversations in the cache. `delete` will remove the conversation in the cache at the `i`th position, 0-indexed. Accessible only to administrators of the server.
 * #### `$check`
 Sends status.
