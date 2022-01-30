@@ -5,13 +5,14 @@ from chatterbot import ChatBot
 from chatterbot.trainers import ChatterBotCorpusTrainer
 from chatterbot.trainers import ListTrainer
 
-# Get discord bot token
+# Get secret discord bot token
 TOKEN = open("token.txt", "r").readline()
 
+# Initialize discord bot
 bot = commands.Bot(command_prefix='$')
 ai = None
 
-# Temporary storage of training input, written to files in convo_dir once cache is full to CACHE_SIZE
+# Temporary storage of training input, written to files in CONVO_DIR once cache is full to CACHE_SIZE
 cache = []
 CACHE_SIZE = 32
 
@@ -20,7 +21,7 @@ convo_count = 0
 CONVO_DIR = "convos/"
 
 # Phrases to delete in input data
-OMITTED_WORDS = set(["$teach", "$talk", "$train", "$check"])
+OMITTED_WORDS = {"$teach", "$talk", "$train", "$check"}
 
 
 # Initialization of discord bot and ai
@@ -33,22 +34,33 @@ async def on_ready() -> None:
     print("Logged in as {0.user}".format(bot))
 
 
-# Allows admins to handle cache
+# Allows admins to handle cache by deleting items, writing them to a file, or clearing it entirely
 @bot.command()
-async def cache_handle(ctx, *args) -> None:
-    valid_args = [arg for arg in args if arg in ["clear", "write"]]
+async def edit(ctx, *args) -> None:
+    valid_args = [arg for arg in args if arg in ["clear", "write", "delete"]]
+    num_args = [int(arg) for arg in args if arg.isnumeric()]
     is_admin = ctx.message.author.guild_permissions.administrator
-    if len(valid_args) == 0:
-        await ctx.message.channel.send("**✕ Invalid command!** Use at least one valid argument: "
-                                       "`clear`, `write`")
+    if len(valid_args) == 0 or len(valid_args) > 1:
+        await ctx.message.channel.send("**✕ Invalid command!** Use only one valid argument: "
+                                       "`clear`, `write`, `delete i`")
     elif not is_admin:
         await ctx.message.channel.send("**✕ Invalid command!** Must be admin to handle cache")
     else:
-        write, clear = "write" in valid_args, "clear" in valid_args
+        write, clear, delete = "write" in valid_args, "clear" in valid_args, "delete" in valid_args
         if write:
             write_custom_data(CONVO_DIR)
         if clear:
             clear_cache()
+        if delete:
+            num = -1
+            for arg in num_args:
+                num = arg
+                break
+            try:
+                delete_cache_item(num)
+            except IndexError:
+                await ctx.message.channel.send("**✕ Invalid command!** Must pass in valid index for deletion")
+                return
         await ctx.message.channel.send("**✓ Cache handled!** {0} ".format(valid_args))
         
         
@@ -93,7 +105,7 @@ async def talk(ctx, *args) -> None:
 
 # Accepts a pair of messages (with the invoking message being a reply) to add to cache
 @bot.command()
-async def teach(ctx, *args) -> None:
+async def teach(ctx) -> None:
     try:
         chain = await get_reply_chain(ctx.message)
         cache_custom_data(chain)
@@ -107,7 +119,9 @@ async def teach(ctx, *args) -> None:
 
 
 # Retrieves every message in a reply chain
-async def get_reply_chain(message, chain=[]) -> list:
+async def get_reply_chain(message, chain=None) -> list:
+    if chain is None:
+        chain = []
     if message.reference is None:
         return [message.content] + chain
     return await get_reply_chain(await message.channel.fetch_message(message.reference.message_id), [message.content] + chain)
@@ -133,6 +147,14 @@ def process_input(s: str) -> str:
 def clear_cache() -> None:
     global cache
     cache.clear()
+
+
+# Delete item at specific index of cache, ensuring that negative indices are also handled as an error
+def delete_cache_item(index: int) -> None:
+    global cache
+    if index < 0:
+        raise IndexError
+    cache.pop(index)
 
 
 # Add interaction to cache list 
@@ -172,7 +194,7 @@ def load_custom_data(dir_name) -> list:
 # Sets discord play status
 async def update_status(status: str) -> None:
     activity = discord.Game(name=status)
-    await bot.change_presence(status=discord.Status.idle, activity=activity)
+    await bot.change_presence(status=discord.Status.online, activity=activity)
 
 
 # Trains ai from basic english corpus and custom list data
