@@ -2,7 +2,7 @@
 Implementation of [Chatterbot](https://github.com/gunthercox/ChatterBot) using Discord API. This project uses some functionality of Chatterbot, but is not endorsed by Chatterbot nor a distribution of the code.
 
 ## Usage
-Due to the necessity of storing files to train the AI, the bot is not hosted publicy. You must download this repository and run the `chat-bot.py` script using your own bot account.
+Due to the necessity of storing files to train the AI, the bot is not hosted publicly. You must download this repository and run the `chat-bot.py` script using your own bot account.
 
 ### 1. Create your own discord [bot](https://discord.com/developers/docs/intro)
 Set up your bot and copy the token in Discord's developer portal at Application > (your application) > Bot > Token. Paste it into `token.txt`.
