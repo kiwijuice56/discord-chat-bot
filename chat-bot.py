@@ -2,8 +2,7 @@ import os
 import discord
 from discord.ext import commands
 from chatterbot import ChatBot
-from chatterbot.trainers import ChatterBotCorpusTrainer
-from chatterbot.trainers import ListTrainer
+from chatterbot.trainers import ChatterBotCorpusTrainer, ListTrainer
 
 # Get secret discord bot token
 TOKEN = open("token.txt", "r").readline()
@@ -18,7 +17,7 @@ CACHE_SIZE = 32
 
 # Conversation files
 convo_count = 0
-CONVO_DIR = "convos/"
+CONVO_DIR = os.path.dirname(__file__).join("convos/")
 
 # Phrases to delete in input data
 OMITTED_WORDS = {"$teach", "$talk", "$train", "$check"}
@@ -30,45 +29,44 @@ async def on_ready() -> None:
     global convo_count
     convo_count = len(os.listdir(CONVO_DIR))
     train_ai(basic=False, custom=False, clear=False)
-    await update_status("$talk")
+    activity = discord.Game(name="$talk")
+    await bot.change_presence(status=discord.Status.online, activity=activity)
     print("Logged in as {0.user}".format(bot))
 
 
-# Allows admins to handle cache by deleting items, writing them to a file, or clearing it entirely
 @bot.command()
-async def edit(ctx, *args) -> None:
-    valid_args = [arg for arg in args if arg in ["clear", "write", "delete"]]
-    num_args = [int(arg) for arg in args if arg.isnumeric()]
-    is_admin = ctx.message.author.guild_permissions.administrator
-    if len(valid_args) == 0 or len(valid_args) > 1:
-        await ctx.message.channel.send("**✕ Invalid command!** Use only one valid argument: "
-                                       "`clear`, `write`, `delete i`")
-    elif not is_admin:
-        await ctx.message.channel.send("**✕ Invalid command!** Must be admin to handle cache")
+async def delete(ctx, *args) -> None:
+    if not ctx.message.author.guild_permissions.administrator:
+        return
+    if not args or not args[0].isnumeric():
+        await ctx.message.channel.send("**✕ Invalid command!** Must pass in valid (0-based) index for deletion")
+    elif int(args[0]) < 0 or int(args[0]) >= len(cache):
+        await ctx.message.channel.send("**✕ Invalid command!** Index (0-based) is out of cache bounds")
     else:
-        write, clear, delete = "write" in valid_args, "clear" in valid_args, "delete" in valid_args
-        if write:
-            write_custom_data(CONVO_DIR)
-        if clear:
-            clear_cache()
-        if delete:
-            num = -1
-            for arg in num_args:
-                num = arg
-                break
-            try:
-                delete_cache_item(num)
-            except IndexError:
-                await ctx.message.channel.send("**✕ Invalid command!** Must pass in valid index for deletion")
-                return
-        await ctx.message.channel.send("**✓ Cache handled!** {0} ".format(valid_args))
-        
-        
+        cache.pop(int(args[0]))
+        await ctx.message.channel.send("**✓** Cache item deleted")
+
+
+@bot.command()
+async def clear(ctx) -> None:
+    if not ctx.message.author.guild_permissions.administrator:
+        return
+    cache.clear()
+    await ctx.message.channel.send("**✓** Cache cleared")
+
+
+@bot.command()
+async def write(ctx) -> None:
+    if not ctx.message.author.guild_permissions.administrator:
+        return
+    write_custom_data(CONVO_DIR)
+    await ctx.message.channel.send("**✓** Cache written to file storage")
+
+
 # Retrains ai after collecting cache
 @bot.command()
-async def train(ctx, *args) -> None:
-    valid_args = [arg for arg in args if arg in ["basic", "custom", "clear"]]
-    is_admin = ctx.message.author.guild_permissions.administrator
+async def retrain(ctx, *args) -> None:
+    valid_args = list(set(args) & set(["basic", "custom", "clear"]))
     if len(valid_args) == 0:
         await ctx.message.channel.send("**✕ Invalid command!** Use at least one valid argument: "
                                        "`basic`, `custom`, `clear`")
@@ -84,12 +82,26 @@ async def train(ctx, *args) -> None:
 
 # Messages channel with status of bot
 @bot.command()
-async def check(ctx) -> None:
-    await ctx.message.channel.send("\n".join([
-        "**Chatbot check\\:**",
-        "Cache ({0}/{1})\\: `{2}`".format(len(cache), CACHE_SIZE, cache),
-        "Saved conversations\\: `{0}`".format(convo_count)
-    ]))
+async def info(ctx) -> None:
+    embed = discord.Embed(
+        title="Help",
+        description=
+        "Cache ({0}/{1})\\: `{2}`".format(len(cache), CACHE_SIZE, cache) +
+        "\nTotal Saved Conversations\\: `{0}`".format(convo_count) +
+        "\nCommands:\n"
+        "`clear`: (admin) Deletes all of cache\n"
+        "`delete {x}`: (admin) Deletes the cache item at index (0-based) x\n"
+        "`info`: Sends status of the bot and command information\n"
+        "`talk {message}`: Sends the chatbot's response to the message. Alphabetic symbols only\n"
+        "`teach {message}`: Stores a conversation based on a reply chain or thread. The root of the thread is the"
+        "first message in the conversation while the message parameter is the last message\n"
+        "`retrain {basic?} {custom?} {clear?}`: Retrains the chatbot with either the basic English corpus, the custom "
+        "corpus from stored conversations, or both. (admin) Using clear as a parameter trains the bot from"
+        "a fresh state\n"
+        "`write`: (admin) Stores cache to file storage",
+        color=0xc7509d
+    )
+    await ctx.message.channel.send(embed=embed)
 
 
 # Retrieves phrase from ai according to message input
@@ -122,39 +134,25 @@ async def teach(ctx) -> None:
 async def get_reply_chain(message, chain=None) -> list:
     if chain is None:
         chain = []
-    if message.reference is None:
-        return [message.content] + chain
-    return await get_reply_chain(await message.channel.fetch_message(message.reference.message_id), [message.content] + chain)
+    if message.reference:
+        await get_reply_chain(await message.channel.fetch_message(message.reference.message_id), chain)
+    chain.append(message.content)
+    return chain
 
 
 # Processes cached input to prevent errors or oddities in ai training
 def process_input(s: str) -> str:
-    sentence = s.split()
     processed_sentence = []
-    for word in sentence:
-        if word in OMITTED_WORDS:
+    for word in s.split():
+        if word.startswith(bot.command_prefix):
             continue
-        basic_word = "".join([c for c in word.lower() if c.isalpha()])
-        if len(basic_word) > 0:
-            processed_sentence.append(basic_word)
-    processed_word = " ".join(processed_sentence)
-    if processed_word.isspace() or len(processed_word) == 0:
+        processed_word = "".join([char for char in word.lower() if char.isalpha()])
+        if processed_word:
+            processed_sentence.append(processed_word)
+    processed_input = " ".join(processed_sentence)
+    if not processed_input:
         raise EmptyInputException("Input sentence is empty after processing!")
-    return processed_word
-
-
-# Boilerplate code to allow for logging/clear prevention
-def clear_cache() -> None:
-    global cache
-    cache.clear()
-
-
-# Delete item at specific index of cache, ensuring that negative indices are also handled as an error
-def delete_cache_item(index: int) -> None:
-    global cache
-    if index < 0:
-        raise IndexError
-    cache.pop(index)
+    return processed_input
 
 
 # Add interaction to cache list 
@@ -178,7 +176,7 @@ def write_custom_data(dir_name) -> None:
             f.write(line + "\n")
         f.close()
         convo_count += 1
-    clear_cache()
+    cache.clear()
 
 
 # Loads cache from file to list
@@ -189,12 +187,6 @@ def load_custom_data(dir_name) -> list:
         convos.append([line.strip() for line in f])
         f.close()
     return convos
-
-
-# Sets discord play status
-async def update_status(status: str) -> None:
-    activity = discord.Game(name=status)
-    await bot.change_presence(status=discord.Status.online, activity=activity)
 
 
 # Trains ai from basic english corpus and custom list data
